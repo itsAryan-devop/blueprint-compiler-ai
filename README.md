@@ -49,7 +49,7 @@ If you see a reply from both Gemini and Groq, the foundation works.
 
 ## Status
 - [x] Phase 0 — setup + provider connectivity
-- [ ] Phase 1 — Pydantic contracts
-- [ ] Phase 2 — walking skeleton
+- [x] Phase 1 — Pydantic contracts
+- [x] Phase 2 — walking skeleton (English -> one LLM call -> validated blueprint)
 - [ ] Phase 3 — four-stage pipeline
 - [ ] ... (full roadmap in the project guide)
