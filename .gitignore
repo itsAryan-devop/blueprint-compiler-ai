@@ -1,0 +1,20 @@
+# --- Secrets: never commit real keys ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# --- Runtime artifacts (generated SQLite DBs, Phase 7) ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

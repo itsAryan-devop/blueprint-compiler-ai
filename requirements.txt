@@ -1,0 +1,7 @@
+# --- LLM providers ---
+google-genai        # Gemini (primary engine)
+groq                # Groq (backup engine + cost-vs-quality comparison)
+
+# --- Config + contracts ---
+python-dotenv       # loads API keys from .env
+pydantic            # the strict-contract backbone (Phase 1 onward)
