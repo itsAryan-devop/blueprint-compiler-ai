@@ -11,6 +11,7 @@ provider SDK directly.
 
 import json
 import os
+import time
 from enum import Enum
 
 from dotenv import load_dotenv
@@ -26,7 +27,9 @@ class Provider(str, Enum):
 # Models confirmed working on our free-tier keys during Phase 0.
 DEFAULT_MODEL = {
     Provider.GEMINI: "gemini-2.5-flash",
-    Provider.GROQ: "llama-3.1-8b-instant",
+    # 70B follows "fill in the schema" instructions far more reliably than the 8B
+    # when used as the structured-generation fallback.
+    Provider.GROQ: "llama-3.3-70b-versatile",
 }
 
 
@@ -74,18 +77,9 @@ def _gemini_json(prompt: str, model: str, temperature: float, response_schema) -
         response = client.models.generate_content(model=model, contents=prompt, config=config)
         return response.text
     except Exception as error:
-        # Native structured output can reject very complex schemas. If so, retry
-        # in plain JSON mode and let our own Pydantic validation do the enforcing.
-        if response_schema is not None:
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(**base),
-                )
-                return response.text
-            except Exception as retry_error:
-                raise LLMError(f"Gemini call failed: {retry_error}") from retry_error
+        # Surface as LLMError so generate_model can retry (keeping the schema
+        # constraint) or fall back to Groq. We deliberately do NOT silently drop
+        # to unconstrained plain-JSON mode, which would lose enum enforcement.
         raise LLMError(f"Gemini call failed: {error}") from error
 
 
@@ -117,3 +111,43 @@ def parse_json(text: str) -> dict:
         if start != -1 and end != -1 and end > start:
             return json.loads(text[start : end + 1])
         raise
+
+
+def generate_model(prompt: str, schema, *, temperature: float = 0.0, max_attempts: int = 3):
+    """Generate JSON for ``prompt`` and validate it into ``schema``.
+
+    For each provider (Gemini first, then Groq) we retry a few times with a short
+    backoff to ride out transient rate-limit / connection errors, then fall
+    through to the next provider. A ValidationError -- the model's output not
+    matching the contract -- is raised straight to the caller; that is the failure
+    the repair engine (Phase 5) will handle, not something a retry should mask.
+    Returns a validated instance of ``schema``.
+    """
+    errors: list[str] = []
+    for provider in (Provider.GEMINI, Provider.GROQ):
+        response_schema = schema if provider is Provider.GEMINI else None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                raw = complete_json(
+                    prompt,
+                    provider=provider,
+                    temperature=temperature,
+                    response_schema=response_schema,
+                )
+                data = parse_json(raw)
+            except (LLMError, json.JSONDecodeError) as error:
+                errors.append(f"{provider.value} try {attempt}: {error}")
+                if attempt < max_attempts:
+                    time.sleep(2 * attempt)
+                continue
+            # Guard against a weaker model echoing the JSON Schema (keys like
+            # "$defs"/"properties" at the top level) instead of an instance.
+            if isinstance(data, dict) and ("$defs" in data or "properties" in data):
+                errors.append(f"{provider.value} try {attempt}: echoed the schema, not an instance")
+                if attempt < max_attempts:
+                    time.sleep(1)
+                continue
+            return schema.model_validate(data)
+    raise LLMError(
+        f"All providers failed for {schema.__name__}: " + " | ".join(errors[-4:])
+    )

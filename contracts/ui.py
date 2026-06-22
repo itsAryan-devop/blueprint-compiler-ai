@@ -19,6 +19,10 @@ class UIField(StrictModel):
 class Component(StrictModel):
     type: ComponentType = Field(..., description="The kind of UI component.")
     name: str = Field(..., description="A short identifier or title, e.g. 'ContactsTable'.")
+    label: str = Field(
+        default="",
+        description="Display text for components that carry text, e.g. a button's caption or a heading.",
+    )
     entity: str | None = Field(
         default=None,
         description="The entity this component displays or edits, e.g. 'contacts'. Null for static or auth components.",

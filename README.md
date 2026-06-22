@@ -51,5 +51,6 @@ If you see a reply from both Gemini and Groq, the foundation works.
 - [x] Phase 0 — setup + provider connectivity
 - [x] Phase 1 — Pydantic contracts
 - [x] Phase 2 — walking skeleton (English -> one LLM call -> validated blueprint)
-- [ ] Phase 3 — four-stage pipeline
+- [x] Phase 3 — four-stage pipeline (intent -> design -> schemas -> refine, modular)
+- [ ] Phase 4 — validation layer (structural + cross-layer)
 - [ ] ... (full roadmap in the project guide)
