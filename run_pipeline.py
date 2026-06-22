@@ -1,12 +1,14 @@
 r"""
-Phase 3 demo -- the real multi-stage pipeline.
+Multi-stage pipeline demo (Phases 3-4).
 
     English  ->  Intent  ->  Design  ->  Schemas (modular)  ->  Refine  ->  Blueprint
+                                                                        ->  Validate
 
 Unlike the walking skeleton (one giant call with the whole 12k-char schema), this
 runs four focused stages, each with only its OWN small schema, and each later
 layer is shown the layers it depends on -- so the output is cross-layer
-consistent by construction and already valid against our contracts.
+consistent by construction. Phase 4 then runs a cross-layer validation pass over
+the finished blueprint and reports any inconsistencies precisely.
 
 Run with:
     .\venv\Scripts\python.exe run_pipeline.py
@@ -16,6 +18,7 @@ Run with:
 import sys
 
 from pipeline import compile_app
+from validation import validate_blueprint
 
 DEFAULT_REQUEST = (
     "Build a CRM with login, contacts, dashboard, role-based access, and a "
@@ -39,8 +42,14 @@ def main() -> None:
     print("\n--- FINAL BLUEPRINT (valid AppBlueprint) ---")
     print(blueprint.model_dump_json(indent=2))
 
+    print("\n--- VALIDATION (Phase 4: cross-layer consistency) ---")
+    report = validate_blueprint(blueprint)
+    print(report.summary())
+    for issue in report.issues:
+        print(f"  [{issue.severity.value}] {issue.code} @ {issue.location}: {issue.message}")
+
     print("\n" + "=" * 72)
-    print("PHASE 3 RESULT")
+    print("PIPELINE RESULT")
     print("=" * 72)
     print(f"App: {blueprint.app_name} ({blueprint.app_type})")
     print(
@@ -50,7 +59,7 @@ def main() -> None:
         f"roles={len(blueprint.auth.roles)}  "
         f"rules={len(blueprint.business_logic.rules)}"
     )
-    print("Every stage returned valid typed output; the blueprint assembled cleanly.")
+    print(f"Cross-layer validation: {report.summary()}")
     if blueprint.assumptions:
         print(f"Assumptions: {blueprint.assumptions}")
     if blueprint.warnings:
