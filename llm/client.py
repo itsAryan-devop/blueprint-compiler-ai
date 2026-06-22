@@ -3,10 +3,17 @@
 One interface, two providers (Gemini primary, Groq fallback). Every call runs at
 temperature 0 and asks for JSON -- the two foundations of deterministic output.
 
-This is intentionally minimal for the walking skeleton (Phase 2). Retries with
-backoff, caching, and the cost-vs-quality switch arrive in later phases; the
-point now is a single clean seam so the rest of the code never talks to a
-provider SDK directly.
+Reliability (Phase 5 hardening):
+  * a HARD per-call timeout, so a single call can never hang for minutes;
+  * VISIBLE logging on every attempt / retry / fallback, so rate-limiting shows
+    as printed activity instead of a silent freeze.
+Caching (Phase 6) will remove most repeat calls entirely -- the real fix for
+free-tier rate limits.
+
+Both providers use plain JSON mode with the target schema embedded in the prompt
+(not Gemini's native response_schema): our contracts use extra="forbid", whose
+JSON Schema carries additionalProperties, which Gemini's response_schema endpoint
+rejects with a 400. Our own Pydantic validation is the enforcement we trust.
 """
 
 import json
@@ -32,6 +39,10 @@ DEFAULT_MODEL = {
     Provider.GROQ: "llama-3.3-70b-versatile",
 }
 
+CALL_TIMEOUT_S = 45   # hard ceiling per LLM call -- no single call hangs longer
+MAX_ATTEMPTS = 2      # attempts per provider before falling back
+BACKOFF_S = 3         # short, visible wait between attempts
+
 
 class LLMError(RuntimeError):
     """Raised when an LLM provider call fails."""
@@ -44,46 +55,42 @@ def complete_json(
     model: str | None = None,
     temperature: float = 0.0,
     response_schema: type | None = None,
+    timeout: float = CALL_TIMEOUT_S,
 ) -> str:
     """Send ``prompt`` to a provider and return the raw JSON text of the reply.
 
-    ``response_schema`` (a Pydantic model class) is used only by Gemini, for
-    native constrained decoding; other providers ignore it and rely on the
-    schema being described inside the prompt.
+    ``timeout`` is a hard ceiling (seconds) on the single network call. The schema
+    must be described inside ``prompt``; ``response_schema`` is accepted for
+    backward compatibility but is intentionally not used (see module docstring).
     """
     model = model or DEFAULT_MODEL[provider]
     if provider is Provider.GEMINI:
-        return _gemini_json(prompt, model, temperature, response_schema)
+        return _gemini_json(prompt, model, temperature, timeout)
     if provider is Provider.GROQ:
-        return _groq_json(prompt, model, temperature)
+        return _groq_json(prompt, model, temperature, timeout)
     raise LLMError(f"Unknown provider: {provider}")
 
 
-def _gemini_json(prompt: str, model: str, temperature: float, response_schema) -> str:
+def _gemini_json(prompt: str, model: str, temperature: float, timeout: float) -> str:
     from google import genai
     from google.genai import types
 
     key = os.getenv("GEMINI_API_KEY")
     if not key:
         raise LLMError("GEMINI_API_KEY is not set in the environment / .env")
-    client = genai.Client(api_key=key)
 
-    base = {"response_mime_type": "application/json", "temperature": temperature}
+    http_options = types.HttpOptions(timeout=int(timeout * 1000)) if timeout else None
+    client = genai.Client(api_key=key, http_options=http_options)
+
+    config = types.GenerateContentConfig(response_mime_type="application/json", temperature=temperature)
     try:
-        if response_schema is not None:
-            config = types.GenerateContentConfig(**base, response_schema=response_schema)
-        else:
-            config = types.GenerateContentConfig(**base)
         response = client.models.generate_content(model=model, contents=prompt, config=config)
         return response.text
     except Exception as error:
-        # Surface as LLMError so generate_model can retry (keeping the schema
-        # constraint) or fall back to Groq. We deliberately do NOT silently drop
-        # to unconstrained plain-JSON mode, which would lose enum enforcement.
         raise LLMError(f"Gemini call failed: {error}") from error
 
 
-def _groq_json(prompt: str, model: str, temperature: float) -> str:
+def _groq_json(prompt: str, model: str, temperature: float, timeout: float) -> str:
     from groq import Groq
 
     key = os.getenv("GROQ_API_KEY")
@@ -96,6 +103,7 @@ def _groq_json(prompt: str, model: str, temperature: float) -> str:
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             response_format={"type": "json_object"},
+            timeout=timeout,
         )
         return response.choices[0].message.content
     except Exception as error:
@@ -113,39 +121,39 @@ def parse_json(text: str) -> dict:
         raise
 
 
-def generate_model(prompt: str, schema, *, temperature: float = 0.0, max_attempts: int = 3):
+def generate_model(prompt: str, schema, *, temperature: float = 0.0):
     """Generate JSON for ``prompt`` and validate it into ``schema``.
 
-    For each provider (Gemini first, then Groq) we retry a few times with a short
-    backoff to ride out transient rate-limit / connection errors, then fall
-    through to the next provider. A ValidationError -- the model's output not
-    matching the contract -- is raised straight to the caller; that is the failure
-    the repair engine (Phase 5) will handle, not something a retry should mask.
-    Returns a validated instance of ``schema``.
+    Tries Gemini then Groq (plain JSON mode; the schema must be in the prompt),
+    each up to MAX_ATTEMPTS, with a hard per-call timeout and a printed line for
+    every attempt, retry, and fallback -- so a rate-limited run is visible
+    activity, never a silent hang. A ValidationError (output that parses but
+    breaks the contract) is raised to the caller; that is the repair engine's job,
+    not something a retry should mask.
     """
     errors: list[str] = []
     for provider in (Provider.GEMINI, Provider.GROQ):
-        response_schema = schema if provider is Provider.GEMINI else None
-        for attempt in range(1, max_attempts + 1):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            print(f"          > {provider.value} (try {attempt}/{MAX_ATTEMPTS}, timeout {CALL_TIMEOUT_S}s) ...", flush=True)
             try:
-                raw = complete_json(
-                    prompt,
-                    provider=provider,
-                    temperature=temperature,
-                    response_schema=response_schema,
-                )
+                raw = complete_json(prompt, provider=provider, temperature=temperature)
                 data = parse_json(raw)
             except (LLMError, json.JSONDecodeError) as error:
-                errors.append(f"{provider.value} try {attempt}: {error}")
-                if attempt < max_attempts:
-                    time.sleep(2 * attempt)
+                short = " ".join(str(error).split())[:90]
+                errors.append(f"{provider.value} #{attempt}: {short}")
+                if attempt < MAX_ATTEMPTS:
+                    nxt = f"retrying in {BACKOFF_S}s"
+                else:
+                    nxt = "falling back to Groq" if provider is Provider.GEMINI else "no providers left"
+                print(f"          ! {provider.value} failed: {short} -- {nxt}", flush=True)
+                if attempt < MAX_ATTEMPTS:
+                    time.sleep(BACKOFF_S)
                 continue
             # Guard against a weaker model echoing the JSON Schema (keys like
             # "$defs"/"properties" at the top level) instead of an instance.
             if isinstance(data, dict) and ("$defs" in data or "properties" in data):
-                errors.append(f"{provider.value} try {attempt}: echoed the schema, not an instance")
-                if attempt < max_attempts:
-                    time.sleep(1)
+                errors.append(f"{provider.value} #{attempt}: echoed the schema, not an instance")
+                print(f"          ! {provider.value} returned the schema, not an instance -- retrying", flush=True)
                 continue
             return schema.model_validate(data)
     raise LLMError(

@@ -5,8 +5,9 @@ Run with:  .\venv\Scripts\python.exe demo_repair.py
 
 Part 1  STRUCTURAL repair (no LLM): a dict with hallucinated fields is cleaned
         deterministically until it satisfies the contract.
-Part 2  CROSS-LAYER repair (no LLM): a blueprint with four planted logical bugs
-        is fixed by the deterministic tier, with a before -> after repair log.
+Part 2  CROSS-LAYER repair (no LLM): a blueprint with six planted logical bugs
+        (incl. a PascalCase entity alias and an undefined role inside a rule) is
+        fixed by the deterministic tier, with a before -> after repair log.
 Part 3  TARGETED REGENERATION (LLM): a bug code cannot safely fix (a component
         pointing at a non-existent table) is repaired by re-asking the model for
         ONLY the broken layer.
@@ -46,10 +47,12 @@ def main() -> None:
     print("PART 2 -- CROSS-LAYER repair (deterministic tier, no LLM)")
     print("=" * 72)
     bad = copy.deepcopy(base)
-    bad["business_logic"]["rules"][1]["plan"] = "enterprise"            # plan not offered
-    bad["auth"]["roles"][0]["permissions"].append("manage_billing")    # permission undefined
-    bad["api"]["endpoints"][3]["allowed_roles"] = []                    # admin rule not enforced
-    bad["ui"]["pages"][1]["allowed_roles"] = ["superadmin"]            # role undefined
+    bad["business_logic"]["rules"][1]["plan"] = "enterprise"             # plan not offered
+    bad["auth"]["roles"][0]["permissions"].append("manage_billing")     # permission undefined
+    bad["api"]["endpoints"][3]["allowed_roles"] = []                     # admin rule not enforced
+    bad["ui"]["pages"][1]["allowed_roles"] = ["superadmin"]             # undefined role (page)
+    bad["business_logic"]["rules"][0]["roles"] = ["admin", "superadmin"]  # undefined role in a RULE (P2.1)
+    bad["ui"]["pages"][1]["components"][0]["entity"] = "Contact"          # PascalCase variant -> alias (P2.2)
     bp = AppBlueprint.model_validate(bad)
     print(f"  before: {validate_blueprint(bp).summary()}")
     result = repair_blueprint(bp, use_llm=False)

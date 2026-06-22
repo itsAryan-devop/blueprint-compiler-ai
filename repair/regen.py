@@ -42,6 +42,7 @@ def regenerate_layer(bp, layer_attr: str, error_messages: list[str]):
         + "\n\nUse ONLY these existing names -- do NOT invent new tables, roles, or plans:\n"
         + _context_summary(bp)
         + f"\n\nCurrent (broken) '{layer_attr}' layer:\n{json.dumps(current, indent=2)}\n\n"
-        + f"Return the corrected '{layer_attr}' layer as JSON."
+        + "Return the corrected layer as a JSON object matching this schema (a "
+        + f"filled instance, NOT the schema itself):\n{json.dumps(schema.model_json_schema())}"
     )
     return generate_model(prompt, schema)

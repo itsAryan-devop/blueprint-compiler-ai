@@ -24,6 +24,11 @@ _LAYER_ATTR = {
     "business": "business_logic",
 }
 
+# Regenerate in dependency order so an upstream fix (e.g. database) is in place
+# before a layer that depends on it (api -> ui) is regenerated -- avoiding a
+# cascade where we'd fix the same orphaned reference over multiple rounds.
+_REGEN_ORDER = ["database", "auth", "api", "ui", "business_logic"]
+
 
 def repair_blueprint(blueprint: AppBlueprint, *, max_rounds: int = 3, use_llm: bool = True) -> RepairResult:
     bp = blueprint.model_copy(deep=True)
@@ -64,8 +69,13 @@ def _regenerate_broken_layers(bp: AppBlueprint, report, log: RepairLog) -> bool:
             by_layer.setdefault(attr, []).append(issue.message)
 
     changed = False
-    for attr, messages in by_layer.items():
+    for attr in _REGEN_ORDER:                 # dependency order, not dict order
+        if attr not in by_layer:
+            continue
+        messages = by_layer[attr]
         try:
+            # regenerate_layer reads fresh context from bp, so a layer
+            # regenerated here already sees any upstream layer fixed above it.
             new_layer = regenerate_layer(bp, attr, messages)
             setattr(bp, attr, new_layer)
             log.record(f"regen.{attr}", attr, RepairTier.REGEN,

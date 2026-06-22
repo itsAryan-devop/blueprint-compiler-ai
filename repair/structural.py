@@ -55,6 +55,8 @@ def repair_raw(data: dict, schema, *, use_llm: bool = True, max_attempts: int = 
                 prompt = (
                     "This JSON failed validation. Fix ONLY these problems and return corrected JSON:\n"
                     + "\n".join(f"- {m}" for m in messages)
+                    + "\n\nIt must match this schema (return a filled instance, NOT the schema):\n"
+                    + json.dumps(schema.model_json_schema())
                     + f"\n\nBad JSON:\n{json.dumps(current, indent=2)[:6000]}"
                 )
                 try:
