@@ -5,3 +5,6 @@ groq                # Groq (backup engine + cost-vs-quality comparison)
 # --- Config + contracts ---
 python-dotenv       # loads API keys from .env
 pydantic            # the strict-contract backbone (Phase 1 onward)
+
+# --- Tests ---
+pytest              # unit tests (validators, repair, key rotation)
