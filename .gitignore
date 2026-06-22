@@ -8,10 +8,11 @@ __pycache__/
 venv/
 .venv/
 
-# --- Runtime artifacts (generated SQLite DBs, Phase 7) ---
+# --- Runtime artifacts ---
 *.db
 *.sqlite
 *.sqlite3
+.llm_cache/
 
 # --- OS / editor noise ---
 .DS_Store

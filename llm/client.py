@@ -3,12 +3,12 @@
 One interface, two providers (Gemini primary, Groq fallback). Every call runs at
 temperature 0 and asks for JSON -- the two foundations of deterministic output.
 
-Reliability (Phase 5 hardening):
+Reliability + determinism:
   * a HARD per-call timeout, so a single call can never hang for minutes;
-  * VISIBLE logging on every attempt / retry / fallback, so rate-limiting shows
-    as printed activity instead of a silent freeze.
-Caching (Phase 6) will remove most repeat calls entirely -- the real fix for
-free-tier rate limits.
+  * VISIBLE logging on every attempt / retry / fallback / cache hit, so a
+    rate-limited run is printed activity instead of a silent freeze;
+  * an on-disk CACHE (llm/cache.py): a repeated prompt returns the exact saved
+    response -- instant, free, and perfectly deterministic.
 
 Both providers use plain JSON mode with the target schema embedded in the prompt
 (not Gemini's native response_schema): our contracts use extra="forbid", whose
@@ -22,6 +22,8 @@ import time
 from enum import Enum
 
 from dotenv import load_dotenv
+
+from . import cache
 
 load_dotenv()
 
@@ -121,22 +123,39 @@ def parse_json(text: str) -> dict:
         raise
 
 
+def _is_schema_echo(data) -> bool:
+    """A weaker model sometimes returns the JSON Schema instead of an instance."""
+    return isinstance(data, dict) and ("$defs" in data or "properties" in data)
+
+
 def generate_model(prompt: str, schema, *, temperature: float = 0.0):
     """Generate JSON for ``prompt`` and validate it into ``schema``.
 
-    Tries Gemini then Groq (plain JSON mode; the schema must be in the prompt),
-    each up to MAX_ATTEMPTS, with a hard per-call timeout and a printed line for
-    every attempt, retry, and fallback -- so a rate-limited run is visible
-    activity, never a silent hang. A ValidationError (output that parses but
-    breaks the contract) is raised to the caller; that is the repair engine's job,
-    not something a retry should mask.
+    Order per provider (Gemini, then Groq): check the on-disk cache first (a hit
+    is instant, free, and byte-identical -- this is our determinism guarantee for
+    repeats); otherwise call live, up to MAX_ATTEMPTS, with a hard per-call
+    timeout and a printed line for every attempt/retry/fallback. Only a response
+    that parses AND validates is cached. A ValidationError is raised to the
+    caller -- that is the repair engine's job, not something a retry should mask.
     """
     errors: list[str] = []
     for provider in (Provider.GEMINI, Provider.GROQ):
+        model = DEFAULT_MODEL[provider]
+
+        cached = cache.get(provider.value, model, temperature, prompt)
+        if cached is not None:
+            try:
+                data = parse_json(cached)
+                if not _is_schema_echo(data):
+                    print(f"          > {provider.value} (cache hit)", flush=True)
+                    return schema.model_validate(data)
+            except Exception:
+                pass  # unreadable/incompatible cache entry -> fall through to a live call
+
         for attempt in range(1, MAX_ATTEMPTS + 1):
             print(f"          > {provider.value} (try {attempt}/{MAX_ATTEMPTS}, timeout {CALL_TIMEOUT_S}s) ...", flush=True)
             try:
-                raw = complete_json(prompt, provider=provider, temperature=temperature)
+                raw = complete_json(prompt, provider=provider, model=model, temperature=temperature)
                 data = parse_json(raw)
             except (LLMError, json.JSONDecodeError) as error:
                 short = " ".join(str(error).split())[:90]
@@ -149,13 +168,13 @@ def generate_model(prompt: str, schema, *, temperature: float = 0.0):
                 if attempt < MAX_ATTEMPTS:
                     time.sleep(BACKOFF_S)
                 continue
-            # Guard against a weaker model echoing the JSON Schema (keys like
-            # "$defs"/"properties" at the top level) instead of an instance.
-            if isinstance(data, dict) and ("$defs" in data or "properties" in data):
+            if _is_schema_echo(data):
                 errors.append(f"{provider.value} #{attempt}: echoed the schema, not an instance")
                 print(f"          ! {provider.value} returned the schema, not an instance -- retrying", flush=True)
                 continue
-            return schema.model_validate(data)
+            model_obj = schema.model_validate(data)  # may raise -> not cached
+            cache.put(provider.value, model, temperature, prompt, raw)
+            return model_obj
     raise LLMError(
         f"All providers failed for {schema.__name__}: " + " | ".join(errors[-4:])
     )
