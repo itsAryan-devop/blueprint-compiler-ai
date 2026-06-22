@@ -53,6 +53,6 @@ If you see a reply from both Gemini and Groq, the foundation works.
 - [x] Phase 2 — walking skeleton (English -> one LLM call -> validated blueprint)
 - [x] Phase 3 — four-stage pipeline (intent -> design -> schemas -> refine, modular)
 - [x] Phase 4 — validation layer (structural + cross-layer)
-- [ ] Phase 5 — repair engine (auto-fix + targeted regen)
+- [x] Phase 5 — repair engine (tiered: deterministic + targeted regen + repair log)
 - [ ] ... (full roadmap in the project guide)
 - [ ] Phase 11 — frontend + deploy (Docker: Dockerfile + .dockerignore, secrets via env, Render/Railway/Cloud Run; no Kubernetes)

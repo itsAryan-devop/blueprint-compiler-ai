@@ -6,8 +6,8 @@ whole class of problem instantly:
     .\venv\Scripts\python.exe smoke_test.py
 
 It (1) imports every package -- which transitively loads/compiles every module
-in contracts/, llm/, and pipeline/ -- and (2) compiles the top-level scripts.
-Any incomplete file makes it fail loudly with the offending file name.
+in contracts/, llm/, pipeline/, validation/, and repair/ -- and (2) compiles the
+top-level scripts. Any incomplete file makes it fail loudly with the file name.
 """
 
 import glob
@@ -16,13 +16,14 @@ import py_compile
 import contracts  # noqa: F401  (importing = compile-checks the whole package)
 import llm  # noqa: F401
 import pipeline  # noqa: F401
+import repair  # noqa: F401
 import validation  # noqa: F401
 
 
 def main() -> None:
     for path in sorted(glob.glob("*.py")):
         py_compile.compile(path, doraise=True)
-    print("SMOKE OK: contracts / llm / pipeline / validation import; all top-level scripts compile.")
+    print("SMOKE OK: contracts / llm / pipeline / validation / repair import; all top-level scripts compile.")
 
 
 if __name__ == "__main__":

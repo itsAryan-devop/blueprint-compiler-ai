@@ -1,14 +1,12 @@
 r"""
-Multi-stage pipeline demo (Phases 3-4).
+Multi-stage pipeline demo (Phases 3-5).
 
-    English  ->  Intent  ->  Design  ->  Schemas (modular)  ->  Refine  ->  Blueprint
-                                                                        ->  Validate
+    English -> Intent -> Design -> Schemas (modular) -> Refine -> Blueprint
+                                                  -> Validate -> Repair -> final
 
-Unlike the walking skeleton (one giant call with the whole 12k-char schema), this
-runs four focused stages, each with only its OWN small schema, and each later
-layer is shown the layers it depends on -- so the output is cross-layer
-consistent by construction. Phase 4 then runs a cross-layer validation pass over
-the finished blueprint and reports any inconsistencies precisely.
+Four focused stages (each with only its OWN small schema, each later layer shown
+the layers it depends on), then a cross-layer validation pass (Phase 4), then the
+tiered repair engine (Phase 5) which fixes what it can and logs how.
 
 Run with:
     .\venv\Scripts\python.exe run_pipeline.py
@@ -18,6 +16,7 @@ Run with:
 import sys
 
 from pipeline import compile_app
+from repair import repair_blueprint
 from validation import validate_blueprint
 
 DEFAULT_REQUEST = (
@@ -48,6 +47,17 @@ def main() -> None:
     for issue in report.issues:
         print(f"  [{issue.severity.value}] {issue.code} @ {issue.location}: {issue.message}")
 
+    print("\n--- REPAIR (Phase 5: tiered, logged) ---")
+    result = repair_blueprint(blueprint)
+    blueprint = result.blueprint
+    if result.log.actions:
+        print(result.log.summary())
+        for action in result.log.actions:
+            print(f"  [{action.tier.value}] {action.issue_code} @ {action.location}: {action.description}")
+    else:
+        print("Nothing to repair.")
+    print(f"After repair: {result.remaining.summary()}")
+
     print("\n" + "=" * 72)
     print("PIPELINE RESULT")
     print("=" * 72)
@@ -59,7 +69,7 @@ def main() -> None:
         f"roles={len(blueprint.auth.roles)}  "
         f"rules={len(blueprint.business_logic.rules)}"
     )
-    print(f"Cross-layer validation: {report.summary()}")
+    print(f"Validation after repair: {result.remaining.summary()}")
     if blueprint.assumptions:
         print(f"Assumptions: {blueprint.assumptions}")
     if blueprint.warnings:
