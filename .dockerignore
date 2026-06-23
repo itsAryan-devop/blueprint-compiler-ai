@@ -1,0 +1,38 @@
+# Secrets -- absolutely never go into the image
+.env
+.env.*
+!.env.example
+
+# Python noise
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Local runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+.llm_cache/
+
+# Git + IDE + OS
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch
+commit_msg.txt
+eval_metrics.json
+cost_quality_metrics.json
+
+# Docs / dev-only
+*.md
+!README.md
+tests/
+demo_*.py
+verify_setup.py
+diag_*.py
