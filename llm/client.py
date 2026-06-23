@@ -106,6 +106,7 @@ def _is_quota_error(error: Exception) -> bool:
         "429", "resource_exhausted", "rate limit", "quota", "exceeded",
         "403", "permission_denied", "api has not been used",
         "401", "unauthorized", "api_key_invalid", "api key not valid",
+        "organization has been restricted",   # Groq anti-abuse flag on a key
     ))
 
 
