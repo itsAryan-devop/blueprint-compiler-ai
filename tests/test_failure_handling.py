@@ -48,3 +48,11 @@ def test_underspecified_clear_domain_gets_safe_defaults():
     d = analyze_request("A todo app with projects and tasks.")
     assert d.severity == Severity.UNDERSPECIFIED
     assert d.assumptions  # safe defaults, not a hard failure
+
+
+def test_legitimate_prompt_without_whitelisted_word_is_not_vague():
+    # Regression: previously any prompt missing a word from our small DOMAIN_HINTS
+    # whitelist was flagged VAGUE. A legitimate prompt should pass through to
+    # underspecified-or-better instead.
+    d = analyze_request("Build a knowledge base for our internal engineering teams.")
+    assert d.severity != Severity.VAGUE

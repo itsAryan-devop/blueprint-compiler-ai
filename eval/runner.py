@@ -19,6 +19,7 @@ import time
 from dataclasses import asdict, dataclass
 
 from eval.dataset import ALL_CASES, Case
+from llm import reset_circuit_breaker
 from pipeline import compile_app
 from repair import repair_blueprint
 from validation import validate_blueprint
@@ -93,6 +94,10 @@ def run_eval(cases: list[Case] | None = None) -> list[CaseResult]:
     cases = list(cases) if cases is not None else list(ALL_CASES)
     results: list[CaseResult] = []
     for case in cases:
+        # Each case is independent: clear any keys the previous case marked as
+        # capped (e.g. Groq per-minute limits that recover in seconds), so one
+        # poisoned key does not silently fail the rest of the eval.
+        reset_circuit_breaker()
         print(f"  > {case.id} {case.label} ...", flush=True)
         results.append(run_one(case))
     return results

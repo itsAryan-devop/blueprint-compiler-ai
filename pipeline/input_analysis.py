@@ -106,8 +106,12 @@ def analyze_request(request: str) -> InputDiagnosis:
                 )
         return InputDiagnosis(severity=Severity.CONFLICTING, reasons=reasons, assumptions=assumptions)
 
-    vague_marker = any(p in text for p in VAGUE_PHRASES) and not _has_domain_hint(text)
-    if vague_marker or not _has_domain_hint(text):
+    # Flag VAGUE only when an explicit vague marker is present (e.g. "make me an
+    # app"). Absence of a domain hint alone is too aggressive -- our keyword
+    # whitelist will never cover every legitimate domain ("knowledge base",
+    # "fleet maintenance", ...), and a short clear prompt should pass through
+    # rather than be mislabelled vague.
+    if any(p in text for p in VAGUE_PHRASES):
         return InputDiagnosis(
             severity=Severity.VAGUE,
             reasons=["Request is vague: no concrete app type or domain mentioned."],

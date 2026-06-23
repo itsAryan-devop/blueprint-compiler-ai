@@ -11,6 +11,8 @@ cheaper, more reliable, and more deterministic than a single giant call.
 
 import json
 
+from pydantic import ValidationError
+
 from llm import generate_model
 
 
@@ -32,10 +34,37 @@ def schema_text(model_class) -> str:
 
 
 def run_stage(label: str, prompt: str, schema):
-    """Run one pipeline stage: send the prompt, validate the reply into ``schema``."""
+    """Run one pipeline stage: send the prompt, validate the reply into ``schema``.
+
+    The Phase 5 "targeted regen" principle applied at stage boundaries: if the
+    LLM produces JSON that parses but violates the contract (e.g. an unknown
+    enum value, a missing required field), re-ask ONCE with the exact errors
+    appended -- "fix only this" -- before giving up. This stops the whole
+    pipeline from crashing on a single repairable per-stage slip.
+    """
     print(f"      - {label} ...", flush=True)
     try:
         result = generate_model(prompt, schema)
+    except ValidationError as error:
+        issues = "\n".join(
+            f"- {'.'.join(str(p) for p in e['loc']) or '(root)'}: {e['msg']}"
+            for e in error.errors()
+        )
+        print(f"      - {label}: validation failed; requesting targeted fix ...", flush=True)
+        fix_prompt = (
+            prompt
+            + "\n\nYOUR PREVIOUS OUTPUT FAILED CONTRACT VALIDATION. The schema's "
+              "allowed values are strict (notably any enum fields). Fix ONLY these "
+              "errors and return valid JSON:\n"
+            + issues
+        )
+        try:
+            result = generate_model(fix_prompt, schema)
+            print(f"      - {label}: ok (after targeted repair)", flush=True)
+            return result
+        except Exception as repair_error:
+            print(f"      - {label}: FAILED after repair ({type(repair_error).__name__}: {repair_error})")
+            raise
     except Exception as error:
         print(f"      - {label}: FAILED ({type(error).__name__}: {error})")
         raise
