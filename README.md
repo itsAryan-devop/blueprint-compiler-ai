@@ -56,5 +56,6 @@ If you see a reply from both Gemini and Groq, the foundation works.
 - [x] Phase 5 — repair engine (tiered: deterministic + targeted regen + repair log)
 - [x] Phase 6 — determinism (temperature 0 + response caching; same-prompt-5x proof)
 - [x] Phase 7 — runtime (blueprint -> real SQLite tables + live FastAPI routes with auth enforced)
+- [x] Phase 8 — failure handling (vague / conflicting / empty prompts -> clarify or assume-and-record)
 - [ ] ... (full roadmap in the project guide)
 - [ ] Phase 11 — frontend + deploy (Docker: Dockerfile + .dockerignore, secrets via env, Render/Railway/Cloud Run; no Kubernetes)

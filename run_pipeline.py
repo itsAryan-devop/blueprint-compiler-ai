@@ -33,11 +33,17 @@ def main() -> None:
     print(f"Request: {request}\n")
 
     try:
-        blueprint = compile_app(request)
+        result_outer = compile_app(request)
     except Exception as error:
         print(f"\nPipeline failed: {type(error).__name__}: {error}")
         return
 
+    if result_outer.needs_clarification:
+        print("\n--- CLARIFICATION NEEDED (Phase 8) ---")
+        print(result_outer.clarifying_question)
+        return
+
+    blueprint = result_outer.blueprint
     print("\n--- FINAL BLUEPRINT (valid AppBlueprint) ---")
     print(blueprint.model_dump_json(indent=2))
 

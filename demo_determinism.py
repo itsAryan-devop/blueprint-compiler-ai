@@ -54,9 +54,9 @@ def part2() -> None:
     print("=" * 72)
     cache.clear()
     t0 = time.perf_counter()
-    bp1 = compile_app(REQUEST)
+    bp1 = compile_app(REQUEST).blueprint
     t1 = time.perf_counter()
-    bp2 = compile_app(REQUEST)
+    bp2 = compile_app(REQUEST).blueprint
     t2 = time.perf_counter()
     j1, j2 = bp1.model_dump_json(), bp2.model_dump_json()
     print(f"\n  run 1 (cache miss): {t1 - t0:6.1f}s   hash={digest(j1)}")
