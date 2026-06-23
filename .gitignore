@@ -23,3 +23,4 @@ Thumbs.db
 # --- Scratch ---
 commit_msg.txt
 eval_metrics.json
+cost_quality_metrics.json

@@ -57,15 +57,27 @@ class RelationshipType(str, Enum):
 
 
 class ComponentType(str, Enum):
-    """The kinds of UI components a page can contain."""
+    """The kinds of UI components a page can contain.
+
+    Kept compact but covers the common bindings the model picks for typical app
+    blueprints. SELECT/CHECKBOX/RADIO/TEXTAREA are added because the eval (Phase
+    9) caught the LLM emitting them on real prompts -- they are legitimate UI
+    bindings, not hallucinations.
+    """
 
     NAVBAR = "navbar"
     TABLE = "table"
     FORM = "form"
     INPUT = "input"
+    TEXTAREA = "textarea"
+    SELECT = "select"
+    CHECKBOX = "checkbox"
+    RADIO = "radio"
     BUTTON = "button"
     CHART = "chart"
     LIST = "list"
     CARD = "card"
     MODAL = "modal"
+    IMAGE = "image"
+    LINK = "link"
     TEXT = "text"

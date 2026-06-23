@@ -58,5 +58,6 @@ If you see a reply from both Gemini and Groq, the foundation works.
 - [x] Phase 7 — runtime (blueprint -> real SQLite tables + live FastAPI routes with auth enforced)
 - [x] Phase 8 — failure handling (vague / conflicting / empty prompts -> clarify or assume-and-record)
 - [x] Phase 9 — evaluation framework (20-prompt dataset + runner + metrics)
+- [x] Phase 10 — cost vs quality (provider pin: gemini-only vs groq-only comparison)
 - [ ] ... (full roadmap in the project guide)
 - [ ] Phase 11 — frontend + deploy (Docker: Dockerfile + .dockerignore, secrets via env, Render/Railway/Cloud Run; no Kubernetes)

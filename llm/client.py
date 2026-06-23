@@ -62,6 +62,17 @@ def reset_circuit_breaker() -> None:
     _exhausted_keys.clear()
 
 
+# Phase 10: pin generate_model to a single provider for cost/quality A/B runs.
+# None = use the normal Gemini-then-Groq order.
+_pinned_provider: "Provider | None" = None
+
+
+def pin_provider(provider: "Provider | None") -> None:
+    """Force generate_model to use only this provider. None = normal rotation."""
+    global _pinned_provider
+    _pinned_provider = provider
+
+
 def _keys(provider: Provider) -> list[str]:
     """Ordered, de-duplicated list of keys for a provider.
 
@@ -81,10 +92,21 @@ def _keys(provider: Provider) -> list[str]:
 
 
 def _is_quota_error(error: Exception) -> bool:
-    """True for 'you're rate-limited / out of quota' errors (skip the key), as
-    opposed to transient errors like 503 'overloaded' (which we retry)."""
+    """True for errors where retrying THIS key is hopeless within this run, so we
+    skip it immediately and move to the next key/provider. Includes:
+      * 429 / RESOURCE_EXHAUSTED / quota messages -- the daily / per-minute cap
+      * 403 / PERMISSION_DENIED / 'API has not been used' -- the key's Google
+        Cloud project does not have the Generative Language API enabled yet
+        (a real situation we hit with a freshly-minted key in Phase 9)
+      * 401 / unauthorized / API_KEY_INVALID -- the key is bad; no retry helps
+    All other errors (e.g. 503 'overloaded') stay transient and get retried.
+    """
     text = str(error).lower()
-    return any(s in text for s in ("429", "resource_exhausted", "rate limit", "quota", "exceeded"))
+    return any(s in text for s in (
+        "429", "resource_exhausted", "rate limit", "quota", "exceeded",
+        "403", "permission_denied", "api has not been used",
+        "401", "unauthorized", "api_key_invalid", "api key not valid",
+    ))
 
 
 def complete_json(
@@ -177,7 +199,8 @@ def generate_model(prompt: str, schema, *, temperature: float = 0.0):
     repair engine's job, not something a retry should mask.
     """
     errors: list[str] = []
-    for provider in (Provider.GEMINI, Provider.GROQ):
+    provider_order = (_pinned_provider,) if _pinned_provider is not None else (Provider.GEMINI, Provider.GROQ)
+    for provider in provider_order:
         model = DEFAULT_MODEL[provider]
 
         cached = cache.get(provider.value, model, temperature, prompt)
