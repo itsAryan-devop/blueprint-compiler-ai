@@ -6,5 +6,10 @@ groq                # Groq (backup engine + cost-vs-quality comparison)
 python-dotenv       # loads API keys from .env
 pydantic            # the strict-contract backbone (Phase 1 onward)
 
+# --- Runtime (Phase 7): turn a blueprint into a live, executable app ---
+fastapi             # the live API server we build from the API schema
+uvicorn             # ASGI server to run the FastAPI app (live URL)
+httpx               # in-process test client for the runtime demo
+
 # --- Tests ---
-pytest              # unit tests (validators, repair, key rotation)
+pytest              # unit tests (validators, repair, key rotation, runtime)

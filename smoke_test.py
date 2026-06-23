@@ -17,13 +17,14 @@ import contracts  # noqa: F401  (importing = compile-checks the whole package)
 import llm  # noqa: F401
 import pipeline  # noqa: F401
 import repair  # noqa: F401
+import runtime  # noqa: F401
 import validation  # noqa: F401
 
 
 def main() -> None:
     for path in sorted(glob.glob("*.py")):
         py_compile.compile(path, doraise=True)
-    print("SMOKE OK: contracts / llm / pipeline / validation / repair import; all top-level scripts compile.")
+    print("SMOKE OK: contracts / llm / pipeline / validation / repair / runtime import; all top-level scripts compile.")
 
 
 if __name__ == "__main__":
