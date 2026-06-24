@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LLM_CACHE_DIR=/data/llm_cache \
+    RUNTIME_DATA_DIR=/data/runtimes \
     PORT=8000
 
 # OS dependencies kept minimal -- only what python wheels need at runtime.
@@ -28,7 +29,11 @@ COPY . .
 
 # Writable directory for SQLite + the LLM cache when the deploy host gives us a
 # read-only image. Mount a volume here in production to persist the cache.
-RUN mkdir -p /data/llm_cache
+RUN useradd --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /data/llm_cache /data/runtimes \
+    && chown -R appuser:appuser /app /data
+
+USER appuser
 
 EXPOSE 8000
 

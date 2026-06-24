@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Compile a plain-English app request into a validated, executable software blueprint — like a compiler for software generation.">
+  <title>Blueprint Compiler — AI Software Generation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Blueprint Compiler home">
+      <span class="brand-mark" aria-hidden="true">BC</span>
+      <span>
+        <strong>Blueprint Compiler</strong>
+        <small>AI software generation engine</small>
+      </span>
+    </a>
+    <div class="header-actions">
+      <a href="/docs" target="_blank" rel="noopener">API docs</a>
+      <div class="health"><span></span> Systems online</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="workspace" aria-labelledby="workspace-title">
+      <div class="intro">
+        <p class="eyebrow">Multi-stage compiler pipeline</p>
+        <h1 id="workspace-title">Describe your app.<br>We'll engineer the rest.</h1>
+        <p>Your idea goes through intent extraction, system design, schema generation, validation, targeted repair, and launches as a live API — all in one build.</p>
+      </div>
+
+      <div class="compiler-grid">
+        <section class="prompt-panel" aria-label="App request">
+          <div class="panel-heading">
+            <div>
+              <span class="step">Start here</span>
+              <h2>What are you building?</h2>
+            </div>
+            <span id="char-count">0 / 10,000</span>
+          </div>
+
+          <label class="sr-only" for="prompt">Describe the app to generate</label>
+          <textarea id="prompt" maxlength="10000" placeholder="Build a CRM for a small sales team with contacts, follow-up tasks, role-based access, premium billing, and an admin analytics dashboard."></textarea>
+
+          <div class="composer-footer">
+            <div class="mode-indicator" title="Every generated layer is validated and repaired">
+              <span aria-hidden="true">✓</span>
+              Validated build
+            </div>
+            <div class="compile-actions">
+              <button class="primary" id="compile" type="button">
+                <span>Build application</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="examples" aria-label="Example prompts">
+            <span>Try an example:</span>
+            <button type="button" data-example="crm">Sales CRM</button>
+            <button type="button" data-example="marketplace">Creator marketplace</button>
+            <button type="button" data-example="clinic">Clinic portal</button>
+          </div>
+        </section>
+
+        <aside class="pipeline-panel" aria-label="Compiler pipeline">
+          <div class="panel-heading">
+            <div>
+              <span class="step">Under the hood</span>
+              <h2>Five compiler passes, not one prompt</h2>
+            </div>
+          </div>
+          <ol class="pipeline">
+            <li id="step-intent"><span>01</span><div><strong>Intent extraction</strong><small>Features, roles, assumptions</small></div></li>
+            <li id="step-design"><span>02</span><div><strong>System design</strong><small>Entities, flows, rules</small></div></li>
+            <li id="step-schema"><span>03</span><div><strong>Schema generation</strong><small>UI, API, database, auth</small></div></li>
+            <li id="step-validate"><span>04</span><div><strong>Validate + repair</strong><small>Cross-layer consistency</small></div></li>
+            <li id="step-runtime"><span>05</span><div><strong>Live runtime</strong><small>SQLite + FastAPI routes</small></div></li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <section id="status-region" class="status-region" aria-live="polite" hidden>
+      <div class="status-copy">
+        <span class="spinner" aria-hidden="true"></span>
+        <div><strong id="status-title">Compiling your application</strong><p id="status-detail">The compiler is analyzing your request.</p></div>
+      </div>
+      <span id="elapsed">0s</span>
+    </section>
+
+    <section id="clarification" class="message-panel" hidden>
+      <span class="message-icon" aria-hidden="true">?</span>
+      <div><strong>One detail is needed</strong><p id="clarification-text"></p></div>
+    </section>
+
+    <section id="error" class="message-panel error" hidden>
+      <span class="message-icon" aria-hidden="true">!</span>
+      <div><strong>Compilation did not complete</strong><p id="error-text"></p></div>
+    </section>
+
+    <section id="results" class="results" hidden aria-labelledby="result-title">
+      <div class="result-header">
+        <div>
+          <p class="eyebrow">Compilation complete</p>
+          <h2 id="result-title">Generated application</h2>
+          <p id="result-type"></p>
+        </div>
+        <div class="result-actions">
+          <a id="runtime-link" class="primary link-button" target="_blank" rel="noopener">Open live API</a>
+          <button id="copy-json" type="button">Copy JSON</button>
+          <button id="download-json" type="button">Download</button>
+        </div>
+      </div>
+
+      <div id="metrics" class="metrics"></div>
+
+      <div class="tabs" role="tablist" aria-label="Compilation results">
+        <button role="tab" aria-selected="true" aria-controls="summary-panel" id="summary-tab">Overview</button>
+        <button role="tab" aria-selected="false" aria-controls="architecture-panel" id="architecture-tab">Architecture</button>
+        <button role="tab" aria-selected="false" aria-controls="validation-panel" id="validation-tab">Validation</button>
+        <button role="tab" aria-selected="false" aria-controls="json-panel" id="json-tab">Blueprint JSON</button>
+      </div>
+
+      <div id="summary-panel" class="tab-panel" role="tabpanel" aria-labelledby="summary-tab"></div>
+      <div id="architecture-panel" class="tab-panel" role="tabpanel" aria-labelledby="architecture-tab" hidden></div>
+      <div id="validation-panel" class="tab-panel" role="tabpanel" aria-labelledby="validation-tab" hidden></div>
+      <div id="json-panel" class="tab-panel json-panel" role="tabpanel" aria-labelledby="json-tab" hidden><pre id="json-output"></pre></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Deterministic generation · Typed contracts · Targeted repair</span>
+    <a href="/docs" target="_blank" rel="noopener">Compiler API docs</a>
+  </footer>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

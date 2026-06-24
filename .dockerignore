@@ -15,6 +15,7 @@ venv/
 *.sqlite
 *.sqlite3
 .llm_cache/
+.runtime_data/
 
 # Git + IDE + OS
 .git/
