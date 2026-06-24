@@ -51,19 +51,20 @@ def test_compile_success_returns_blueprint_and_repair_log():
         "docs_url": "/runtime/test-runtime/docs",
         "openapi_url": "/runtime/test-runtime/openapi.json",
     }
-    with patch("app.main.compile_app", return_value=_ok()), \
+    with patch("app.main.compile_fast", return_value=_ok()), \
          patch("app.main._launch_runtime", return_value=runtime):
-        r = TestClient(app).post("/compile", json={"prompt": "x"})
+        r = TestClient(app).post("/compile", json={"prompt": "Build a CRM with contacts and analytics."})
     assert r.status_code == 200
     data = r.json()
     assert "blueprint" in data and "validation" in data and "diagnosis" in data
     assert "repair_log" in data
     assert data["blueprint"]["app_name"] == "CRM App"
     assert data["runtime"]["docs_url"].endswith("/docs")
+    assert data["compiler_mode"] == "fast-deterministic"
 
 
 def test_compile_clarification_short_circuits():
-    with patch("app.main.compile_app", return_value=_clarify()):
+    with patch("app.main.compile_fast", return_value=_clarify()):
         r = TestClient(app).post("/compile", json={"prompt": ""})
     data = r.json()
     assert data["needs_clarification"] is True
@@ -72,11 +73,42 @@ def test_compile_clarification_short_circuits():
 
 
 def test_compile_pipeline_crash_returns_502():
-    with patch("app.main.compile_app", side_effect=RuntimeError("nope")):
-        r = TestClient(app).post("/compile", json={"prompt": "x"})
+    with patch("app.main.compile_fast", side_effect=RuntimeError("nope")):
+        r = TestClient(app).post("/compile", json={"prompt": "Build a CRM with contacts and analytics."})
     assert r.status_code == 502
     assert "RuntimeError" in r.json()["detail"]
     assert "nope" not in r.json()["detail"]
+
+
+def test_compile_web_fast_path_does_not_call_live_llm():
+    with patch("app.main.compile_app", side_effect=AssertionError("live LLM path should not run")):
+        r = TestClient(app).post(
+            "/compile",
+            json={"prompt": "Build a CRM with contacts, deals, login, and admin analytics."},
+        )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["compiler_mode"] == "fast-deterministic"
+    assert data["blueprint"]["app_type"] == "CRM"
+    assert data["runtime"]["openapi_url"].endswith("/openapi.json")
+
+
+def test_conflicting_prompt_records_assumptions_and_repairs_access():
+    r = TestClient(app).post(
+        "/compile",
+        json={
+            "prompt": (
+                "Build a CRM with no login or users, but also add admin-only "
+                "analytics, sales-rep permissions, private customer records, "
+                "and role-based access control."
+            )
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["diagnosis"]["severity"] == "conflicting"
+    assert data["blueprint"]["assumptions"]
+    assert any(action["issue_code"] == "business.access_not_enforced" for action in data["repair_log"])
 
 
 def test_compile_rejects_missing_prompt_field():

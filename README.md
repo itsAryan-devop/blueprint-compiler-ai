@@ -57,6 +57,11 @@ The workbench shows the generated architecture, validation and repair evidence,
 downloadable JSON, and a link to the app's live FastAPI runtime and interactive
 API documentation.
 
+For reliable demos, the web workbench uses the fast deterministic compiler path
+by default, then still runs validation, targeted repair, SQLite generation, and
+runtime mounting. To run the full live LLM pipeline from the web endpoint, set
+`WEB_COMPILER_MODE=live` before starting Uvicorn.
+
 ## Run with Docker
 The image is **slim, secret-free, and layer-cached**. Keys are injected at
 runtime via environment variables -- never baked into the image.

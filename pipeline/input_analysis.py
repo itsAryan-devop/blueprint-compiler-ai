@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 MIN_CHARS = 8
 VAGUE_PHRASES = (
     "make me an app", "build an app", "build a app", "make an app", "create an app",
-    "build something", "an app", "the app", "any app",
+    "make app", "build something", "an app", "the app", "any app", "idk",
 )
 # Cheap "do we see real nouns describing a domain?" signal.
 DOMAIN_HINTS = (
