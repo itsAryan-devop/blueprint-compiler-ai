@@ -21,6 +21,7 @@ Gemini's native response_schema, which 400s on our extra="forbid" contracts).
 Our own Pydantic validation is the enforcement we trust.
 """
 
+import concurrent.futures
 import json
 import os
 import time
@@ -29,6 +30,11 @@ from enum import Enum
 from dotenv import load_dotenv
 
 from . import cache
+
+# One shared pool: any single hung call is force-cancelled when the wall-clock
+# timeout fires, instead of waiting on the SDK's internal retry loop. This is
+# the ONLY way to guarantee "no call hangs for minutes" on a free-tier 503/429.
+_CALL_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="llm-call")
 
 load_dotenv()
 
@@ -43,9 +49,18 @@ DEFAULT_MODEL = {
     Provider.GROQ: "llama-3.3-70b-versatile",
 }
 
-CALL_TIMEOUT_S = 45   # hard ceiling per LLM call -- no single call hangs longer
+CALL_TIMEOUT_S = 25   # WALL-CLOCK ceiling per attempt -- enforced via the pool,
+                      # not just the SDK's HTTP timeout (which doesn't bound the
+                      # SDK's internal retry loop). A stuck call is force-cancelled.
 MAX_ATTEMPTS = 2      # transient-error retries per key before moving on
-BACKOFF_S = 3         # short, visible wait between transient retries
+BACKOFF_S = 2         # short, visible wait between transient retries
+
+# Provider order for the live demo: Groq first (high free-tier limits, very fast),
+# Gemini second (smarter but tiny 20/day per key). Override via LLM_PRIMARY=gemini
+# for the quality-comparison run. Read at call time so tests/env can flip it.
+
+def _primary() -> str:
+    return os.getenv("LLM_PRIMARY", "groq").strip().lower()
 
 # Circuit breaker: keys that returned a quota/429 error during THIS process.
 # Skipped for the rest of the run so we don't waste attempts on a capped key.
@@ -200,7 +215,12 @@ def generate_model(prompt: str, schema, *, temperature: float = 0.0):
     repair engine's job, not something a retry should mask.
     """
     errors: list[str] = []
-    provider_order = (_pinned_provider,) if _pinned_provider is not None else (Provider.GEMINI, Provider.GROQ)
+    if _pinned_provider is not None:
+        provider_order = (_pinned_provider,)
+    elif _primary() == "gemini":
+        provider_order = (Provider.GEMINI, Provider.GROQ)
+    else:
+        provider_order = (Provider.GROQ, Provider.GEMINI)
     for provider in provider_order:
         model = DEFAULT_MODEL[provider]
 
@@ -225,10 +245,23 @@ def generate_model(prompt: str, schema, *, temperature: float = 0.0):
             tag = f"{provider.value} key ...{key[-4:]}"
             for attempt in range(1, MAX_ATTEMPTS + 1):
                 print(f"          > {tag} (try {attempt}/{MAX_ATTEMPTS}, timeout {CALL_TIMEOUT_S}s) ...", flush=True)
+                future = _CALL_POOL.submit(
+                    complete_json,
+                    prompt,
+                    provider=provider, model=model,
+                    temperature=temperature, api_key=key, timeout=CALL_TIMEOUT_S,
+                )
                 try:
-                    raw = complete_json(prompt, provider=provider, model=model,
-                                        temperature=temperature, api_key=key)
+                    # WALL-CLOCK ceiling: if the call exceeds CALL_TIMEOUT_S we
+                    # abandon the thread and move on -- no more multi-minute hangs.
+                    raw = future.result(timeout=CALL_TIMEOUT_S)
                     data = parse_json(raw)
+                except concurrent.futures.TimeoutError:
+                    short = f"wall-clock timeout after {CALL_TIMEOUT_S}s"
+                    errors.append(f"{tag} #{attempt}: {short}")
+                    print(f"          ! {tag} timed out after {CALL_TIMEOUT_S}s -- abandoning, next key/provider", flush=True)
+                    future.cancel()  # best-effort; the thread will exit on its own
+                    continue
                 except (LLMError, json.JSONDecodeError) as error:
                     short = " ".join(str(error).split())[:90]
                     errors.append(f"{tag} #{attempt}: {short}")

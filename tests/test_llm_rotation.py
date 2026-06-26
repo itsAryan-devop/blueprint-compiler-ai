@@ -20,12 +20,18 @@ VALID_INTENT = json.dumps(
 
 
 @pytest.fixture(autouse=True)
-def _isolate():
+def _isolate(monkeypatch):
+    # Default Groq-primary in production; tests that exercise Gemini-rotation
+    # logic flip this per-test. Keeps each test's intent obvious.
     cache.set_enabled(False)
     client.reset_circuit_breaker()
     yield
     client.reset_circuit_breaker()
     cache.set_enabled(True)
+
+
+def _pin_primary(monkeypatch, name: str) -> None:
+    monkeypatch.setenv("LLM_PRIMARY", name)
 
 
 def test_keys_parsing_splits_and_dedupes(monkeypatch):
@@ -35,6 +41,7 @@ def test_keys_parsing_splits_and_dedupes(monkeypatch):
 
 
 def test_rotates_to_next_key_when_first_is_quota_capped(monkeypatch):
+    _pin_primary(monkeypatch, "gemini")
     monkeypatch.setenv("GEMINI_API_KEYS", "capped1,good2")
     monkeypatch.setenv("GROQ_API_KEYS", "groqkey")
     seen = []
@@ -54,7 +61,24 @@ def test_rotates_to_next_key_when_first_is_quota_capped(monkeypatch):
     assert all(provider != "groq" for provider, _ in seen)  # Groq never needed
 
 
+def test_groq_is_primary_by_default(monkeypatch):
+    # Production default: Groq first (high free limits, fast); Gemini is backup.
+    monkeypatch.delenv("LLM_PRIMARY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEYS", "g1")
+    monkeypatch.setenv("GROQ_API_KEYS", "q1")
+    seen = []
+
+    def fake(prompt, *, provider, model, temperature, api_key=None, **_):
+        seen.append(provider.value)
+        return VALID_INTENT
+
+    monkeypatch.setattr(client, "complete_json", fake)
+    client.generate_model("p", IntentSpec)
+    assert seen == ["groq"]  # Gemini never tried -- Groq answered first
+
+
 def test_circuit_breaker_skips_capped_key_on_next_call(monkeypatch):
+    _pin_primary(monkeypatch, "gemini")
     monkeypatch.setenv("GEMINI_API_KEYS", "capped1,good2")
     monkeypatch.setenv("GROQ_API_KEYS", "groqkey")
 
@@ -80,6 +104,7 @@ def test_circuit_breaker_skips_capped_key_on_next_call(monkeypatch):
 
 
 def test_falls_back_to_groq_when_all_gemini_keys_capped(monkeypatch):
+    _pin_primary(monkeypatch, "gemini")
     monkeypatch.setenv("GEMINI_API_KEYS", "g1,g2")
     monkeypatch.setenv("GROQ_API_KEYS", "groqkey")
     seen = []
@@ -99,6 +124,7 @@ def test_falls_back_to_groq_when_all_gemini_keys_capped(monkeypatch):
 
 
 def test_transient_error_is_retried_not_treated_as_quota(monkeypatch):
+    _pin_primary(monkeypatch, "gemini")
     monkeypatch.setenv("GEMINI_API_KEYS", "g1")
     monkeypatch.setenv("GROQ_API_KEYS", "groqkey")
     monkeypatch.setattr(client, "BACKOFF_S", 0)  # no real sleeping in tests

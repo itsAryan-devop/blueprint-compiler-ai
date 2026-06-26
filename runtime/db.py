@@ -25,11 +25,17 @@ SQLITE_TYPE: dict[FieldType, str] = {
 
 
 def _column_ddl(column: Column) -> str:
+    """SQL for one column.
+
+    Demo-friendliness: only the primary key is NOT NULL by default. The LLM
+    routinely marks every column `required`, which makes ad-hoc CRUD POSTs 400
+    on a missing field. Keeping non-PK columns nullable lets a reviewer hit POST
+    with a partial body and still get a 201. The blueprint's own ``required``
+    flag is preserved in the JSON for inspection.
+    """
     parts = [_quote(column.name), SQLITE_TYPE[column.type]]
     if column.primary_key:
         parts.append("PRIMARY KEY")
-    if column.required and not column.primary_key:
-        parts.append("NOT NULL")
     if column.unique and not column.primary_key:
         parts.append("UNIQUE")
     return " ".join(parts)
