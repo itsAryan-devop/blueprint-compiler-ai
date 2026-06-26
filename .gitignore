@@ -25,3 +25,5 @@ Thumbs.db
 commit_msg.txt
 eval_metrics.json
 cost_quality_metrics.json
+eval_full_groq.log
+test_webapp_live.py

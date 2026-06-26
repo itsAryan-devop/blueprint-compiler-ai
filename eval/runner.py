@@ -15,6 +15,7 @@ The cache makes a repeat run nearly free (and byte-deterministic), so the runner
 is safe to re-execute.
 """
 
+import concurrent.futures
 import time
 from dataclasses import asdict, dataclass
 
@@ -23,6 +24,18 @@ from llm import reset_circuit_breaker
 from pipeline import compile_app
 from repair import repair_blueprint
 from validation import validate_blueprint
+
+# Per-case wall-clock cap. With ~140 quota across all keys, a single case
+# exhausting every key on every stage retry can pin the whole eval for tens of
+# minutes. Bounding each case keeps the eval finishable even when quota is bad.
+#
+# IMPORTANT: each case uses its OWN ephemeral executor. Python cannot kill a
+# running thread, so a timed-out case's compile_app keeps running. With a shared
+# pool the next case's submit would queue behind the runaway and itself time out
+# (we saw this with E01 -- 120s "failure" with zero actual work). Per-case pools
+# isolate the leak: the runaway thread fades on its own, the next case starts
+# immediately on a fresh thread.
+CASE_TIMEOUT_S = 120
 
 
 @dataclass
@@ -53,15 +66,29 @@ def _outcome_matches(expected: str, outcome: str, assumptions: int) -> bool:
 
 def run_one(case: Case) -> CaseResult:
     t0 = time.perf_counter()
+    # Ephemeral, single-shot pool per case -- see note at the top of the file.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"case-{case.id}")
+    future = pool.submit(compile_app, case.request)
     try:
-        cr = compile_app(case.request)
+        cr = future.result(timeout=CASE_TIMEOUT_S)
+    except concurrent.futures.TimeoutError:
+        future.cancel()
+        pool.shutdown(wait=False)  # let the runaway thread fade in the background
+        return CaseResult(
+            id=case.id, label=case.label, expected=case.expected,
+            outcome="failed", matched_expected=False,
+            latency_s=time.perf_counter() - t0,
+            failure_type=f"case_timeout_{CASE_TIMEOUT_S}s",
+        )
     except Exception as error:
+        pool.shutdown(wait=False)
         return CaseResult(
             id=case.id, label=case.label, expected=case.expected,
             outcome="failed", matched_expected=False,
             latency_s=time.perf_counter() - t0,
             failure_type=type(error).__name__,
         )
+    pool.shutdown(wait=False)
 
     if cr.needs_clarification:
         return CaseResult(
