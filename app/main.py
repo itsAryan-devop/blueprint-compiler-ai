@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 RUNTIME_DATA_DIR = Path(os.getenv("RUNTIME_DATA_DIR", ".runtime_data")).resolve()
-WEB_COMPILER_MODE = os.getenv("WEB_COMPILER_MODE", "fast").strip().lower()
+WEB_COMPILER_MODE = os.getenv("WEB_COMPILER_MODE", "live").strip().lower()
 
 app = FastAPI(
     title="Blueprint Compiler",

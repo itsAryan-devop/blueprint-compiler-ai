@@ -51,7 +51,8 @@ def test_compile_success_returns_blueprint_and_repair_log():
         "docs_url": "/runtime/test-runtime/docs",
         "openapi_url": "/runtime/test-runtime/openapi.json",
     }
-    with patch("app.main.compile_fast", return_value=_ok()), \
+    # Default web mode is now "live" -- mock the live compile_app path.
+    with patch("app.main.compile_app", return_value=_ok()), \
          patch("app.main._launch_runtime", return_value=runtime):
         r = TestClient(app).post("/compile", json={"prompt": "Build a CRM with contacts and analytics."})
     assert r.status_code == 200
@@ -60,11 +61,11 @@ def test_compile_success_returns_blueprint_and_repair_log():
     assert "repair_log" in data
     assert data["blueprint"]["app_name"] == "CRM App"
     assert data["runtime"]["docs_url"].endswith("/docs")
-    assert data["compiler_mode"] == "fast-deterministic"
+    assert data["compiler_mode"] == "live-llm"
 
 
 def test_compile_clarification_short_circuits():
-    with patch("app.main.compile_fast", return_value=_clarify()):
+    with patch("app.main.compile_app", return_value=_clarify()):
         r = TestClient(app).post("/compile", json={"prompt": ""})
     data = r.json()
     assert data["needs_clarification"] is True
@@ -73,27 +74,31 @@ def test_compile_clarification_short_circuits():
 
 
 def test_compile_pipeline_crash_returns_502():
-    with patch("app.main.compile_fast", side_effect=RuntimeError("nope")):
+    with patch("app.main.compile_app", side_effect=RuntimeError("nope")):
         r = TestClient(app).post("/compile", json={"prompt": "Build a CRM with contacts and analytics."})
     assert r.status_code == 502
     assert "RuntimeError" in r.json()["detail"]
     assert "nope" not in r.json()["detail"]
 
 
-def test_compile_web_fast_path_does_not_call_live_llm():
-    with patch("app.main.compile_app", side_effect=AssertionError("live LLM path should not run")):
-        r = TestClient(app).post(
-            "/compile",
-            json={"prompt": "Build a CRM with contacts, deals, login, and admin analytics."},
-        )
+def test_fast_mode_opt_in_still_works(monkeypatch):
+    """Setting WEB_COMPILER_MODE=fast must still use the fast template path."""
+    monkeypatch.setattr("app.main.WEB_COMPILER_MODE", "fast")
+    runtime = {
+        "id": "rt", "base_url": "/runtime/rt",
+        "docs_url": "/runtime/rt/docs", "openapi_url": "/runtime/rt/openapi.json",
+    }
+    with patch("app.main.compile_fast", return_value=_ok()), \
+         patch("app.main._launch_runtime", return_value=runtime):
+        r = TestClient(app).post("/compile", json={"prompt": "Build a CRM."})
     assert r.status_code == 200
-    data = r.json()
-    assert data["compiler_mode"] == "fast-deterministic"
-    assert data["blueprint"]["app_type"] == "CRM"
-    assert data["runtime"]["openapi_url"].endswith("/openapi.json")
+    assert r.json()["compiler_mode"] == "fast-deterministic"
 
 
-def test_conflicting_prompt_records_assumptions_and_repairs_access():
+def test_conflicting_prompt_records_assumptions_in_diagnosis():
+    """A self-contradictory prompt -- the deterministic Phase 8 analyzer should
+    flag it as 'conflicting' and inject a resolution assumption, regardless of
+    what the downstream LLM stage does with the repair log."""
     r = TestClient(app).post(
         "/compile",
         json={
@@ -107,8 +112,8 @@ def test_conflicting_prompt_records_assumptions_and_repairs_access():
     assert r.status_code == 200
     data = r.json()
     assert data["diagnosis"]["severity"] == "conflicting"
-    assert data["blueprint"]["assumptions"]
-    assert any(action["issue_code"] == "business.access_not_enforced" for action in data["repair_log"])
+    assert data["diagnosis"]["assumptions"]      # Phase 8 added a resolution
+    assert data["blueprint"]["assumptions"]      # ...which carried into the blueprint
 
 
 def test_compile_rejects_missing_prompt_field():
