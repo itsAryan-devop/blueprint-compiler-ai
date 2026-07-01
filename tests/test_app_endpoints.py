@@ -81,19 +81,6 @@ def test_compile_pipeline_crash_returns_502():
     assert "nope" not in r.json()["detail"]
 
 
-def test_fast_mode_opt_in_still_works(monkeypatch):
-    """Setting WEB_COMPILER_MODE=fast must still use the fast template path."""
-    monkeypatch.setattr("app.main.WEB_COMPILER_MODE", "fast")
-    runtime = {
-        "id": "rt", "base_url": "/runtime/rt",
-        "docs_url": "/runtime/rt/docs", "openapi_url": "/runtime/rt/openapi.json",
-    }
-    with patch("app.main.compile_fast", return_value=_ok()), \
-         patch("app.main._launch_runtime", return_value=runtime):
-        r = TestClient(app).post("/compile", json={"prompt": "Build a CRM."})
-    assert r.status_code == 200
-    assert r.json()["compiler_mode"] == "fast-deterministic"
-
 
 def test_conflicting_prompt_records_assumptions_in_diagnosis():
     """A self-contradictory prompt -- the deterministic Phase 8 analyzer should

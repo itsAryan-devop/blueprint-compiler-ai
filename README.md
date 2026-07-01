@@ -54,7 +54,7 @@ This project mirrors that for app generation:
 | Multi-stage pipeline (4+ passes)     | `pipeline/`                                        |
 | Strict schema enforcement (Pydantic) | `contracts/` (`extra="forbid"` on every model)     |
 | Validation + Repair engine           | `validation/`, `repair/`                           |
-| Deterministic behaviour              | `temperature=0` + on-disk cache in `llm/cache.py`  |
+| Deterministic behaviour              | `temperature=0` + byte-exact on-disk cache (`llm/cache.py`) |
 | Execution awareness                  | `runtime/` — real SQLite + live FastAPI            |
 | Failure handling                     | `pipeline/input_analysis.py` (Phase 8 analyzer)    |
 | Evaluation framework                 | `eval/` — 20-prompt dataset, runner, metrics       |
@@ -73,7 +73,7 @@ This project mirrors that for app generation:
 | LLM (primary)        | Groq (`llama-3.3-70b-versatile`) — high throughput  |
 | LLM (backup)         | Google Gemini (`gemini-2.5-flash`) — higher quality |
 | Runtime DB           | SQLite                                              |
-| Tests                | pytest (48 unit + integration tests)                |
+| Tests                | pytest (unit + integration tests)                |
 | Deploy               | Docker → Render / Railway / Cloud Run               |
 
 **Provider abstraction with multi-key rotation:** `llm/client.py` holds a pool
@@ -123,7 +123,7 @@ venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ### Run the tests
 
 ```bash
-venv\Scripts\python.exe -m pytest tests/ -q       # 48 tests, ~2 s, no network
+venv\Scripts\python.exe -m pytest tests/ -q       # unit + integration, no network
 ```
 
 ### Run the eval suite
@@ -133,8 +133,10 @@ venv\Scripts\python.exe run_eval.py               # all 20 prompts
 venv\Scripts\python.exe run_eval.py --subset 4    # quick check
 ```
 
-The eval writes `eval_metrics.json`; a committed snapshot from the live run is
-in `eval_metrics_phase9_full_groq_primary.json`.
+The eval writes `eval_metrics.json` with per-case outcome, latency, repair
+counts, and assumptions. Results depend on your available free-tier quota — a
+run with exhausted keys will show timeouts, which is itself honest signal about
+free-tier limits rather than a code failure.
 
 ### Cost vs quality comparison
 
@@ -181,9 +183,9 @@ validation/   Structural + cross-layer consistency checkers
 repair/       Tiered repair engine (deterministic → targeted LLM regen → honest failure)
 runtime/      Blueprint → real SQLite tables + live FastAPI routes with auth
 llm/          Provider abstraction (Gemini / Groq), key rotation, circuit breaker, cache
-eval/         20-prompt dataset, runner, per-case metrics, JSON snapshot
+eval/         20-prompt dataset, runner, per-case metrics
 app/          The deployed FastAPI server + frontend
-tests/        48 unit + integration tests (zero network calls)
+tests/        unit + integration tests (zero network calls)
 Dockerfile    Production image — slim, layered, secret-free
 ```
 
@@ -217,9 +219,10 @@ where Groq's output fails validation.
 **Why deterministic repair before LLM regen?**
 Auto-fixable issues (unknown role → drop it, missing permission → define it,
 unenforced role-access rule → enforce it, plural/case name mismatch → normalize
-it) get fixed for free in code with zero LLM calls. In the committed eval run,
-**100 % of repair actions were deterministic — 0 LLM regens needed.** That's
-the entire Phase 5 design paying off in measurable terms.
+it) get fixed for free in code with zero LLM calls. Only when an issue can't be
+mechanically resolved does the engine ask the LLM to regenerate the single
+broken layer — never a blind full retry. Run `python run_eval.py` to see the
+deterministic-vs-LLM repair split on your own quota.
 
 ---
 
@@ -235,6 +238,14 @@ the entire Phase 5 design paying off in measurable terms.
 - **The runtime currently writes any payload key that matches a real DB
   column.** It does not yet validate against the API's declared `request_fields`
   — a follow-up tightening, not a correctness issue.
+- **Determinism is exact on a cache hit** (same prompt → byte-identical JSON via
+  the on-disk cache). On a genuine cache miss, `temperature=0` makes generation
+  *near*-deterministic, but provider fallback (Groq → Gemini) can change wording;
+  the cache is what guarantees reproducibility for a given prompt.
+- **On a live cache miss, expect 30–90 s** while the 5 stages run. If every
+  free-tier key is exhausted the request returns an honest 502 asking you to
+  retry — the system never falls back to a canned template that ignores your
+  prompt.
 
 ---
 
@@ -244,6 +255,5 @@ the entire Phase 5 design paying off in measurable terms.
 |-----------------|---------------------------------------------------------------------------------------|
 | Live URL        | ✅ [blueprint-compiler-ai.onrender.com](https://blueprint-compiler-ai.onrender.com)  |
 | GitHub repo     | ✅ [itsAryan-devop/blueprint-compiler-ai](https://github.com/itsAryan-devop/blueprint-compiler-ai) |
-| Loom video      | ⏳ in progress                                                                        |
-| Tests           | ✅ 48 / 48 passing                                                                    |
-| Eval metrics    | ✅ committed: `eval_metrics_phase9_full_groq_primary.json`                            |
+| Tests           | ✅ passing (`python -m pytest tests/ -q`)                                            |
+| Eval framework  | ✅ `python run_eval.py` — 20-prompt dataset + metrics, reproducible on your keys     |

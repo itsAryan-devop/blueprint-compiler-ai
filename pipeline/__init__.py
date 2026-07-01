@@ -9,7 +9,6 @@ A single big LLM call is forbidden; staging is what makes the system reliable.
 
 from pipeline.compiler import CompileResult, compile_app
 from pipeline.design import design_system
-from pipeline.fast_compile import compile_fast
 from pipeline.input_analysis import InputDiagnosis, Severity, analyze_request
 from pipeline.intent import extract_intent
 from pipeline.refine import refine
@@ -22,7 +21,7 @@ from pipeline.schema_gen import (
 )
 
 __all__ = [
-    "compile_app", "compile_fast", "CompileResult",
+    "compile_app", "CompileResult",
     "analyze_request", "InputDiagnosis", "Severity",
     "extract_intent",
     "design_system",
