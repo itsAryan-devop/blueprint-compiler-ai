@@ -107,6 +107,11 @@ def _register_entity(app: FastAPI, conn: sqlite3.Connection, dep, ep: Endpoint) 
     table = ep.entity
     table_q = _quote(table)
     method = ep.method
+    # Real primary-key column name (usually "id", but not guaranteed) so the
+    # CRUD-by-id handlers work even when the PK is named differently.
+    _pk_rows = [r for r in conn.execute(f"PRAGMA table_info({table_q})").fetchall() if r[5]]
+    pk = _pk_rows[0][1] if _pk_rows else "id"
+    pk_q = _quote(pk)
 
     if method == HTTPMethod.GET and not _has_path_param(ep.path):
         async def list_handler(_auth=Depends(dep)):
@@ -120,7 +125,7 @@ def _register_entity(app: FastAPI, conn: sqlite3.Connection, dep, ep: Endpoint) 
         # the blueprint may use (id, user_id, contact_id, ...), not only "id".
         async def get_one(request: Request, _auth=Depends(dep)):
             id_value = next(iter(request.path_params.values()), None)
-            row = conn.execute(f"SELECT * FROM {table_q} WHERE id = ?", (id_value,)).fetchone()
+            row = conn.execute(f"SELECT * FROM {table_q} WHERE {pk_q} = ?", (id_value,)).fetchone()
             if row is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"{table} {id_value} not found")
             return _row_to_dict(row)
@@ -134,10 +139,10 @@ def _register_entity(app: FastAPI, conn: sqlite3.Connection, dep, ep: Endpoint) 
         allowed_fields = set(column_names) | {f.name for f in ep.request_fields}
 
         async def create_handler(payload: dict, _auth=Depends(dep)):
-            row_id = payload.get("id") or uuid.uuid4().hex
-            values = {"id": row_id}
+            row_id = payload.get(pk) or uuid.uuid4().hex
+            values = {pk: row_id}
             for name in allowed_fields:
-                if name == "id":
+                if name == pk:
                     continue
                 if name in payload:
                     values[name] = payload[name]
@@ -148,7 +153,7 @@ def _register_entity(app: FastAPI, conn: sqlite3.Connection, dep, ep: Endpoint) 
                 conn.commit()
             except sqlite3.IntegrityError as error:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error))
-            return {"id": row_id, **values}
+            return {pk: row_id, **values}
         app.add_api_route(ep.path, create_handler, methods=["POST"], tags=[table], status_code=201)
         return
 
@@ -159,7 +164,7 @@ def _register_entity(app: FastAPI, conn: sqlite3.Connection, dep, ep: Endpoint) 
             id_value = next(iter(request.path_params.values()), None)
             assignments = ", ".join(f"{_quote(k)} = ?" for k in payload.keys())
             result = conn.execute(
-                f"UPDATE {table_q} SET {assignments} WHERE id = ?",
+                f"UPDATE {table_q} SET {assignments} WHERE {pk_q} = ?",
                 (*payload.values(), id_value),
             )
             conn.commit()
@@ -172,7 +177,7 @@ def _register_entity(app: FastAPI, conn: sqlite3.Connection, dep, ep: Endpoint) 
     if method == HTTPMethod.DELETE:
         async def delete_handler(request: Request, _auth=Depends(dep)):
             id_value = next(iter(request.path_params.values()), None)
-            result = conn.execute(f"DELETE FROM {table_q} WHERE id = ?", (id_value,))
+            result = conn.execute(f"DELETE FROM {table_q} WHERE {pk_q} = ?", (id_value,))
             conn.commit()
             if result.rowcount == 0:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"{table} {id_value} not found")

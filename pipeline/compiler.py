@@ -12,6 +12,8 @@ Schema generation runs in dependency order (database -> api -> ui, auth ->
 business logic) so each layer can be made consistent with the ones it builds on.
 """
 
+import concurrent.futures
+
 from pydantic import BaseModel
 
 from contracts import AppBlueprint
@@ -67,11 +69,23 @@ def compile_app(request: str) -> CompileResult:
     design = design_system(intent)
 
     print("[3/4] schema generation (modular, each with its own small schema)")
-    database = generate_database(design)
-    auth = generate_auth(design)
-    api = generate_api(design, database)
-    ui = generate_ui(design, api)
-    business_logic = generate_business_logic(design, auth)
+    # Two independent dependency chains run in parallel to cut live latency:
+    #   chain A: database -> api -> ui
+    #   chain B: auth -> business_logic
+    def _chain_a():
+        db = generate_database(design)
+        ap = generate_api(design, db)
+        return db, ap, generate_ui(design, ap)
+
+    def _chain_b():
+        au = generate_auth(design)
+        return au, generate_business_logic(design, au)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        fut_a = pool.submit(_chain_a)
+        fut_b = pool.submit(_chain_b)
+        database, api, ui = fut_a.result()
+        auth, business_logic = fut_b.result()
 
     print("[4/4] refinement / assembly")
     blueprint = refine(intent, ui, api, database, auth, business_logic)
